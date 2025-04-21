@@ -4,6 +4,7 @@ Requirements
 
 Install dependenceis
 `npm install`
+`npm run dev`
 
 
 If running an orbitcal calcluation
