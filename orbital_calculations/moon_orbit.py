@@ -23,13 +23,17 @@ m_dot = Thrust / (Isp * 9.81)  # kg/s, mass flow rate
 
 m0 = mstruc + mprop + mpl
 
-#  Initial Conditions 
+# Launch Site Coordinates (Apollo 11 landing site)
+launch_latitude = 0.67416 * deg  # radians
+launch_longitude = (23.47315 + 10.0) * deg  # radians, significantly reduced longitude
+
+# Initial Conditions 
 v0 = 0.1                  # m/s, small initial velocity to avoid division by zero
 gamma0 = 90 * deg         # initial flight path angle (vertical)
 psi0 = 0 * deg            # initial heading angle
 r0 = Re                   # initial radius (on surface)
-theta0 = 0                # initial angular position
-phi0 = 0                  # initial latitude
+theta0 = launch_longitude # initial angular position (longitude)
+phi0 = launch_latitude    # initial latitude
 t_max = 20000              # total sim time (s)
 
 # Target Orbit Parameters
@@ -296,44 +300,44 @@ czml = [
 # Add descent stage trajectory
 descent_positions = []
 for i in range(len(descent_t)):
-    x = descent_r[i] * np.sin(descent_theta[i])
-    y = descent_r[i] * np.cos(descent_theta[i])
-    z = 0  # Assume motion in the lunar equatorial plane
+    x = descent_r[i] * np.cos(launch_latitude) * np.sin(descent_theta[i] + launch_longitude)
+    y = descent_r[i] * np.cos(launch_latitude) * np.cos(descent_theta[i] + launch_longitude)
+    z = descent_r[i] * np.sin(launch_latitude) * 2
     descent_positions.extend([descent_t[i], x, y, z])
 
-czml.append({
-    "id": "DescentStage",
-    "availability": f"{epoch.isoformat()}Z/{(epoch + datetime.timedelta(seconds=t_max)).isoformat()}Z",
-    "path": {
-        "leadTime": 0,
-        "material": {
-            "solidColor": {
-                "color": {
-                    "rgba": [255, 0, 0, 255]  # Red color for descent stage
-                }
-            }
-        },
-        "width": 2,
-        "show": True
-    },
-    "position": {
-        "interpolationAlgorithm": "LINEAR",
-        "epoch": epoch.isoformat() + "Z",
-        "cartesian": descent_positions
-    },
-   "model": {
-        "gltf": "/models/lm/lunarmodule.gltf",
-        "minimumPixelSize": 64,
-        "maximumScale": 20000
-    }
-})
+# czml.append({
+#     "id": "DescentStage",
+#     "availability": f"{epoch.isoformat()}Z/{(epoch + datetime.timedelta(seconds=t_max)).isoformat()}Z",
+#     "path": {
+#         "leadTime": 0,
+#         "material": {
+#             "solidColor": {
+#                 "color": {
+#                     "rgba": [255, 0, 0, 255]  # Red color for descent stage
+#                 }
+#             }
+#         },
+#         "width": 2,
+#         "show": True
+#     },
+#     "position": {
+#         "interpolationAlgorithm": "LINEAR",
+#         "epoch": epoch.isoformat() + "Z",
+#         "cartesian": descent_positions
+#     },
+#     "model": {
+#         "gltf": "/models/lm/lunarmodule.gltf",
+#         "minimumPixelSize": 64,
+#         "maximumScale": 20000
+#     }
+# })
 
 # Add ascent stage trajectory
 ascent_positions = []
 for i in range(len(t)):
-    x = r[i] * np.sin(theta[i])
-    y = r[i] * np.cos(theta[i])
-    z = 0  # Assume motion in the lunar equatorial plane
+    x = r[i] * np.cos(launch_latitude) * np.sin(theta[i] + launch_longitude)
+    y = r[i] * np.cos(launch_latitude) * np.cos(theta[i] + launch_longitude)
+    z = r[i] * np.sin(launch_latitude) * 2.72
     ascent_positions.extend([t[i], x, y, z])
 
 czml.append({
@@ -357,7 +361,7 @@ czml.append({
         "cartesian": ascent_positions
     },
     "model": {
-        "gltf": "/models/lm/lunarmodule.gltf",        
+        "gltf": "/models/lm/lunarmodule.gltf",
         "minimumPixelSize": 64,
         "maximumScale": 20000
     }

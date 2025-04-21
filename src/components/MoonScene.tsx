@@ -4,6 +4,7 @@ import "cesium/Build/Cesium/Widgets/widgets.css";
 
 // Set the default ellipsoid to Moon
 Cesium.Ellipsoid.default = Cesium.Ellipsoid.MOON;
+
 // Define Points of Interest and Camera Views outside the component
 const pointsOfInterest = [
   { text: "Apollo 11", latitude: 0.67416, longitude: 23.47315 },
@@ -78,7 +79,7 @@ const MoonScene: React.FC = () => {
           await czmlDataSource.load(czmlFilePath);
           viewer.dataSources.add(czmlDataSource);
 
-          const rocket = czmlDataSource.entities.getById("DescentStage");
+          const rocket = czmlDataSource.entities.getById("AscentStage");
 
           if (rocket) {
             // Ensure the rocket path remains visible
@@ -122,7 +123,7 @@ const MoonScene: React.FC = () => {
             }
 
             rocket.viewFrom = new Cesium.ConstantProperty(
-              new Cesium.Cartesian3(-1000, 200, 500) // Adjusted to move farther away
+              new Cesium.Cartesian3(-4000, 500, 250) // Adjusted to move closer to the model
             );
 
             // Set the initial view to focus on the lunar module (DescentStage)
@@ -134,7 +135,7 @@ const MoonScene: React.FC = () => {
                 viewer.camera.flyTo({
                   destination: Cesium.Cartesian3.multiplyByScalar(
                     position,
-                    5, // Scale the position vector to move farther away
+                    2, // Scale the position vector to move closer to the model
                     new Cesium.Cartesian3()
                   ),
                   orientation: {
