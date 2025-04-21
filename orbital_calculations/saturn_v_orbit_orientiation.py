@@ -249,6 +249,16 @@ with open(czml_file_path, "w") as czml_file:
 
 print(f"CZML file written to {czml_file_path}")
 
+# Print simulation results
+print("\n--- Saturn V Launch Simulation Results ---")
+print(f"Simulation time: {t[-1]:.1f} seconds")
+print(f"Final Altitude: {h[-1]:.2f} km")
+print(f"Final Velocity (Relative): {vrel[-1]:.4f} km/s")
+print(f"Final Velocity (Absolute): {vabs[-1]:.4f} km/s")
+print(f"Final Flight Path Angle: {psideg[-1]:.2f} degrees")
+print(f"Downrange Distance: {dr[-1]:.2f} km")
+print(f"Reason for termination: {'Simulation time exceeded' if t[-1] >= t_max else 'Other'}")
+
 # Plotting the results
 plt.figure(figsize=(12, 10))
 

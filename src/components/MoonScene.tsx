@@ -79,81 +79,42 @@ const MoonScene: React.FC = () => {
           await czmlDataSource.load(czmlFilePath);
           viewer.dataSources.add(czmlDataSource);
 
-          const rocket = czmlDataSource.entities.getById("AscentStage");
+          const descentStage = czmlDataSource.entities.getById("DescentStage");
 
-          if (rocket) {
-            // Ensure the rocket path remains visible
-            if (rocket.path) {
-              rocket.path.show = new Cesium.ConstantProperty(true);
-            }
-
-            // Check if position exists before creating VelocityOrientationProperty
-            if (rocket.position) {
-              const velocityOrientation =
-                new Cesium.VelocityOrientationProperty(rocket.position);
-
-              // Apply a fixed rotation to align the rocket model correctly
-              const rotationMatrix = Cesium.Matrix3.fromRotationY(
-                Cesium.Math.toRadians(90.0)
-              );
-              const rotationQuaternion =
-                Cesium.Quaternion.fromRotationMatrix(rotationMatrix);
-              rocket.orientation = new Cesium.CallbackProperty(
-                (time, result) => {
-                  const baseOrientation = velocityOrientation.getValue(
-                    time,
-                    result || new Cesium.Quaternion()
-                  );
-
-                  if (!baseOrientation) {
-                    // Return a default orientation if baseOrientation is undefined
-                    return Cesium.Quaternion.IDENTITY;
-                  }
-
-                  return Cesium.Quaternion.multiply(
-                    baseOrientation,
-                    rotationQuaternion,
-                    result || new Cesium.Quaternion()
-                  );
-                },
-                false
-              );
-            } else {
-              console.error("Rocket position is undefined in the CZML file.");
-            }
-
-            rocket.viewFrom = new Cesium.ConstantProperty(
-              new Cesium.Cartesian3(-4000, 500, 250) // Adjusted to move closer to the model
+          if (descentStage && descentStage.position) {
+            descentStage.orientation = new Cesium.VelocityOrientationProperty(
+              descentStage.position
+            );
+            descentStage.viewFrom = new Cesium.ConstantProperty(
+              new Cesium.Cartesian3(-4000, 500, 250) // Adjusted for descent stage
             );
 
-            // Set the initial view to focus on the lunar module (DescentStage)
-            if (rocket && rocket.position) {
-              const position = rocket.position.getValue(
-                Cesium.JulianDate.now()
+            // Set the initial view to focus on the descent stage
+            const position = descentStage.position.getValue(
+              Cesium.JulianDate.now()
+            );
+            if (position) {
+              viewer.camera.flyTo({
+                destination: Cesium.Cartesian3.multiplyByScalar(
+                  position,
+                  2, // Scale the position vector to move closer to the model
+                  new Cesium.Cartesian3()
+                ),
+                orientation: {
+                  heading: Cesium.Math.toRadians(0),
+                  pitch: Cesium.Math.toRadians(-45),
+                  roll: 0,
+                },
+                duration: 3, // Smooth transition duration
+              });
+            } else {
+              console.error(
+                "Descent stage position is undefined at the current time."
               );
-              if (position) {
-                viewer.camera.flyTo({
-                  destination: Cesium.Cartesian3.multiplyByScalar(
-                    position,
-                    2, // Scale the position vector to move closer to the model
-                    new Cesium.Cartesian3()
-                  ),
-                  orientation: {
-                    heading: Cesium.Math.toRadians(0),
-                    pitch: Cesium.Math.toRadians(-45),
-                    roll: 0,
-                  },
-                  duration: 3, // Smooth transition duration
-                });
-              } else {
-                console.error(
-                  "Rocket position is undefined at the current time."
-                );
-              }
             }
-          } else {
-            console.error("Entity 'DescentStage' not found in the CZML file.");
           }
+
+          // Remove any logic that sets the initial view to the ascent stage
         } catch (error) {
           console.error(
             `Failed to load the CZML file from '${czmlFilePath}'.`,

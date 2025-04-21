@@ -5,6 +5,7 @@ import os
 import json
 import datetime
 
+czml = []
 # Constants
 omega = 2.6617e-6         # rad/s, Moon rotation rate
 Re = 1737100              # m, lunar radius
@@ -273,76 +274,77 @@ plt.tight_layout()
 plt.show()
 
 # Set the epoch to the actual date and time of Apollo 11 lunar module descent
-epoch = datetime.datetime(1969, 7, 20, 20, 17, 40)  # UTC time of lunar module landing
+epoch = datetime.datetime(1969, 7, 20, 19, 0, 0)  # Start of descent stage
 
-# Reverse the ascent calculations for descent stage
-descent_t = t[::-1]
-descent_r = r[::-1]
-descent_theta = theta[::-1]
-descent_h = descent_r - Re
-descent_h_km = descent_h / 1000
+# Define realistic availability times for descent and ascent stages
+descent_start_time = datetime.datetime(1969, 7, 20, 19, 0, 0)  # Start of descent
+descent_end_time = datetime.datetime(1969, 7, 20, 21, 17, 40)  # Landing time
+ascent_start_time = datetime.datetime(1969, 7, 21, 17, 54, 0)  # Ascent start time
+ascent_end_time = datetime.datetime(1969, 7, 21, 18, 21, 50)  # Ascent end time
 
 # Generate CZML data
 czml = [
     {
-        "id": "document",
+        "id": "document",  # Add the document ID
         "name": "CSM-LM Trajectory",
         "version": "1.0",
         "clock": {
-            "interval": f"{epoch.isoformat()}Z/{(epoch + datetime.timedelta(seconds=t_max)).isoformat()}Z",
-            "currentTime": f"{epoch.isoformat()}Z",
+            "interval": f"{descent_start_time.isoformat()}Z/{ascent_end_time.isoformat()}Z",
+            "currentTime": f"{descent_start_time.isoformat()}Z",
             "range": "LOOP_STOP",
             "step": "SYSTEM_CLOCK_MULTIPLIER"
         }
     }
 ]
 
-# Add descent stage trajectory
+# Reverse the ascent stage trajectory for the descent stage
 descent_positions = []
-for i in range(len(descent_t)):
-    x = descent_r[i] * np.cos(launch_latitude) * np.sin(descent_theta[i] + launch_longitude)
-    y = descent_r[i] * np.cos(launch_latitude) * np.cos(descent_theta[i] + launch_longitude)
-    z = descent_r[i] * np.sin(launch_latitude) * 2
-    descent_positions.extend([descent_t[i], x, y, z])
+for i in range(len(t) - 1, -1, -1):  # Reverse the ascent stage trajectory
+    # Reverse altitude, velocity, and pitch angle changes
+    x = r[i] * np.cos(launch_latitude) * np.sin(theta[i] + launch_longitude)
+    y = r[i] * np.cos(launch_latitude) * np.cos(theta[i] + launch_longitude)
+    z = r[i] * np.sin(launch_latitude) * 5  # Multiply z by 5
+    descent_positions.extend([t_max - t[i], x, y, z])  # Reverse time for descent
 
-# czml.append({
-#     "id": "DescentStage",
-#     "availability": f"{epoch.isoformat()}Z/{(epoch + datetime.timedelta(seconds=t_max)).isoformat()}Z",
-#     "path": {
-#         "leadTime": 0,
-#         "material": {
-#             "solidColor": {
-#                 "color": {
-#                     "rgba": [255, 0, 0, 255]  # Red color for descent stage
-#                 }
-#             }
-#         },
-#         "width": 2,
-#         "show": True
-#     },
-#     "position": {
-#         "interpolationAlgorithm": "LINEAR",
-#         "epoch": epoch.isoformat() + "Z",
-#         "cartesian": descent_positions
-#     },
-#     "model": {
-#         "gltf": "/models/lm/lunarmodule.gltf",
-#         "minimumPixelSize": 64,
-#         "maximumScale": 20000
-#     }
-# })
+# Add descent stage trajectory (reverse of ascent stage)
+czml.append({
+    "id": "DescentStage",
+    "availability": f"{descent_start_time.isoformat()}Z/{descent_end_time.isoformat()}Z",
+    "path": {
+        "leadTime": 0,
+        "material": {
+            "solidColor": {
+                "color": { 
+                    "rgba": [255, 0, 0, 255]  # Red color for descent stage
+                }
+            }
+        },
+        "width": 2,
+        "show": True
+    },
+    "position": {
+        "interpolationAlgorithm": "LINEAR",
+        "epoch": descent_start_time.isoformat() + "Z",
+        "cartesian": descent_positions
+    },
+    "model": {
+        "gltf": "/models/lm/lunarmodule.gltf",
+        "minimumPixelSize": 64,
+        "maximumScale": 20000
+    }
+})
 
-# Add ascent stage trajectory
+# Add ascent stage trajectory (Apollo 11 ascent profile)
 ascent_positions = []
 for i in range(len(t)):
     x = r[i] * np.cos(launch_latitude) * np.sin(theta[i] + launch_longitude)
     y = r[i] * np.cos(launch_latitude) * np.cos(theta[i] + launch_longitude)
-    z = r[i] * np.sin(launch_latitude) * 2.72
+    z = r[i] * np.sin(launch_latitude) * 5  # Multiply z by 5
     ascent_positions.extend([t[i], x, y, z])
 
 czml.append({
     "id": "AscentStage",
-    "availability": f"{epoch.isoformat()}Z/{(epoch + datetime.timedelta(seconds=t_max)).isoformat()}Z",
+    "availability": f"{ascent_start_time.isoformat()}Z/{ascent_end_time.isoformat()}Z",
     "path": {
         "leadTime": 0,
         "material": {
@@ -357,7 +359,7 @@ czml.append({
     },
     "position": {
         "interpolationAlgorithm": "LINEAR",
-        "epoch": epoch.isoformat() + "Z",
+        "epoch": ascent_start_time.isoformat() + "Z",
         "cartesian": ascent_positions
     },
     "model": {

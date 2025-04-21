@@ -128,6 +128,17 @@ v = sol.y[2]
 gamma = sol.y[3]
 m = sol.y[4]
 
+# Calculate acceleration at each time step
+accel = np.zeros_like(t)
+for i in range(len(t)):
+    g = mu / r[i]**2
+    throttle = throttle_program(t[i], r[i] - Re, v[i]) if t[i] < tburn and m[i] > (mstruc + mpl) else 0
+    T = Thrust * throttle
+    a_thrust = T / m[i]
+    a_gravity = -g
+    a_centripetal = v[i]**2 * np.cos(gamma[i])**2 / r[i]
+    accel[i] = a_thrust + a_gravity * np.sin(gamma[i]) + a_centripetal * np.sin(gamma[i])
+
 h = r - Re                     # m, altitude
 h_km = h / 1000                # km, altitude
 v_km_s = v / 1000              # km/s, velocity
