@@ -12,6 +12,30 @@ const pointsOfInterest = [
   { text: "Apollo 15", latitude: 26.13341, longitude: 3.6285 },
 ];
 
+// Define key mission events
+const missionEvents = [
+  {
+    label: "LM Undocking (17:44 UT)",
+    time: "1969-07-20T17:44:00Z",
+    description: "Eagle separates from Columbia",
+  },
+  {
+    label: "Descent Orbit Insertion (19:08 UT)",
+    time: "1969-07-20T19:08:00Z",
+    description: "30-second burn to begin descent trajectory",
+  },
+  {
+    label: "Powered Descent Initiation (20:05 UT)",
+    time: "1969-07-20T20:05:00Z",
+    description: "Final braking phase begins",
+  },
+  {
+    label: "Lunar Touchdown (20:17:40 UT)",
+    time: "1969-07-20T20:17:40Z",
+    description: "Eagle lands at Tranquility Base",
+  },
+];
+
 const MoonScene: React.FC = () => {
   const cesiumContainerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
@@ -72,49 +96,70 @@ const MoonScene: React.FC = () => {
         });
       });
 
+      // Add mission timeline events (log events for now)
+      missionEvents.forEach((event) => {
+        console.log(
+          `Mission Event: ${event.label} - ${event.description} at ${event.time}`
+        );
+      });
+
       async function initialize() {
-        const czmlFilePath = "/csm_lm_trajectory.czml";
+        const czmlFilePath = "/apollo11_mission.czml";
         try {
           const czmlDataSource = new Cesium.CzmlDataSource();
           await czmlDataSource.load(czmlFilePath);
           viewer.dataSources.add(czmlDataSource);
 
-          const descentStage = czmlDataSource.entities.getById("DescentStage");
+          // Setup proper orientation for both stages
+          const descentStage = czmlDataSource.entities.getById("LM_Descent");
+          const ascentStage = czmlDataSource.entities.getById("LM_Ascent");
 
           if (descentStage && descentStage.position) {
             descentStage.orientation = new Cesium.VelocityOrientationProperty(
               descentStage.position
             );
             descentStage.viewFrom = new Cesium.ConstantProperty(
-              new Cesium.Cartesian3(-4000, 500, 250) // Adjusted for descent stage
+              new Cesium.Cartesian3(-100, 20, 50) // Closer view for descent stage
             );
-
-            // Set the initial view to focus on the descent stage
-            const position = descentStage.position.getValue(
-              Cesium.JulianDate.now()
-            );
-            if (position) {
-              viewer.camera.flyTo({
-                destination: Cesium.Cartesian3.multiplyByScalar(
-                  position,
-                  2, // Scale the position vector to move closer to the model
-                  new Cesium.Cartesian3()
-                ),
-                orientation: {
-                  heading: Cesium.Math.toRadians(0),
-                  pitch: Cesium.Math.toRadians(-45),
-                  roll: 0,
-                },
-                duration: 3, // Smooth transition duration
-              });
-            } else {
-              console.error(
-                "Descent stage position is undefined at the current time."
-              );
-            }
           }
 
-          // Remove any logic that sets the initial view to the ascent stage
+          if (ascentStage && ascentStage.position) {
+            ascentStage.orientation = new Cesium.VelocityOrientationProperty(
+              ascentStage.position
+            );
+            ascentStage.viewFrom = new Cesium.ConstantProperty(
+              new Cesium.Cartesian3(-100, 20, 50)
+            );
+          }
+
+          // Set initial time to LM undocking
+          viewer.clock.currentTime = Cesium.JulianDate.fromIso8601(
+            "1969-07-20T17:44:00Z"
+          );
+
+          // Set the initial view to focus on the separation between CSM and LM
+          const position = descentStage?.position?.getValue(
+            viewer.clock.currentTime
+          );
+          if (position) {
+            viewer.camera.flyTo({
+              destination: Cesium.Cartesian3.multiplyByScalar(
+                position,
+                2.5, // Position camera farther to see both CSM and LM
+                new Cesium.Cartesian3()
+              ),
+              orientation: {
+                heading: Cesium.Math.toRadians(0),
+                pitch: Cesium.Math.toRadians(-45),
+                roll: 0,
+              },
+              duration: 3, // Smooth transition duration
+            });
+          } else {
+            console.error(
+              "Descent stage position is undefined at the current time."
+            );
+          }
         } catch (error) {
           console.error(
             `Failed to load the CZML file from '${czmlFilePath}'.`,

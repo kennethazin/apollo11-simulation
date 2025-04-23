@@ -31,7 +31,7 @@ const Earth: React.FC<EarthProps> = ({ onEarthSceneEnd }) => {
     viewerRef.current = viewer; // Store viewer instance
 
     async function initialize() {
-      const czmlFilePath = "/saturn_v_trajectory_orientation.czml";
+      const czmlFilePath = "/saturn_v_trajectory_orientation.czml"; // Public folder reference in Vite
       try {
         const czmlDataSource = new Cesium.CzmlDataSource();
         await czmlDataSource.load(czmlFilePath);
@@ -86,7 +86,7 @@ const Earth: React.FC<EarthProps> = ({ onEarthSceneEnd }) => {
 
             const currentTime = viewerRef.current.clock.currentTime;
             const correctedTliEndTime = Cesium.JulianDate.fromIso8601(
-              "1969-07-16T17:05:54Z"
+              "1969-07-16T16:22:13Z"
             );
 
             // Logic for switching tracked entity (SaturnV -> Post-TLI)
@@ -109,7 +109,7 @@ const Earth: React.FC<EarthProps> = ({ onEarthSceneEnd }) => {
 
             // Define the time to trigger the scene switch
             const earthSceneEndTime = Cesium.JulianDate.fromIso8601(
-              "1969-07-16T18:00:00Z" // Time when Earth scene should end
+              "1969-07-16T16:50:00Z" // Time when Earth scene should end
             );
 
             // Check if the current time has reached the end time and trigger the scene switch callback
@@ -165,22 +165,23 @@ const Earth: React.FC<EarthProps> = ({ onEarthSceneEnd }) => {
             Cesium.JulianDate.toDate(currentJulianTime).getTime();
 
           // Define burn times using JulianDate for accurate comparison
+          // Updated intervals to match saturn_v_orbit_orientiation.py
           const burnIntervals = [
             new Cesium.TimeInterval({
-              start: Cesium.JulianDate.fromIso8601("1969-07-16T13:32:00Z"),
-              stop: Cesium.JulianDate.fromIso8601("1969-07-16T13:34:48Z"),
+              start: Cesium.JulianDate.fromIso8601("1969-07-16T13:32:00Z"), // Launch
+              stop: Cesium.JulianDate.fromIso8601("1969-07-16T13:34:44Z"), // tburn1 = 164s
             }), // Stage 1
             new Cesium.TimeInterval({
-              start: Cesium.JulianDate.fromIso8601("1969-07-16T13:34:48Z"),
-              stop: Cesium.JulianDate.fromIso8601("1969-07-16T13:40:54Z"),
+              start: Cesium.JulianDate.fromIso8601("1969-07-16T13:34:44Z"), // After Stage 1
+              stop: Cesium.JulianDate.fromIso8601("1969-07-16T13:41:15Z"), // tburn1 + tburn2 = 164s + 391s = 555s
             }), // Stage 2
             new Cesium.TimeInterval({
-              start: Cesium.JulianDate.fromIso8601("1969-07-16T13:40:54Z"),
-              stop: Cesium.JulianDate.fromIso8601("1969-07-16T13:43:18Z"),
+              start: Cesium.JulianDate.fromIso8601("1969-07-16T13:41:15Z"), // After Stage 2
+              stop: Cesium.JulianDate.fromIso8601("1969-07-16T13:43:45Z"), // tburn1 + tburn2 + tburn3_1 = 164s + 391s + 150s = 705s
             }), // Stage 3 Burn 1
             new Cesium.TimeInterval({
-              start: Cesium.JulianDate.fromIso8601("1969-07-16T16:59:18Z"),
-              stop: Cesium.JulianDate.fromIso8601("1969-07-16T17:05:54Z"), // Corrected TLI end time
+              start: Cesium.JulianDate.fromIso8601("1969-07-16T16:16:16Z"), // After Coast, TLI start
+              stop: Cesium.JulianDate.fromIso8601("1969-07-16T16:22:13Z"), // TLI end (tburn1 + tburn2 + tburn3_1 + tcoast3 + tburn3_2)
             }), // Stage 3 Burn 2 (TLI)
           ];
 

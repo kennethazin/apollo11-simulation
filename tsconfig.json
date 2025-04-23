@@ -1,0 +1,49 @@
+{
+  "compilerOptions": {
+    /* Visit https://aka.ms/tsconfig to read more about this file */
+
+    /* Language and Environment */
+    "target": "ES2020" /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */,
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ] /* Specify a set of bundled library declaration files that describe the target runtime environment. */,
+    "jsx": "react-jsx" /* Specify JSX code generation: 'preserve', 'react-native', 'react', 'react-jsx' or 'react-jsxdev'. */,
+
+    /* Modules */
+    "module": "ESNext" /* Specify what module code is generated. */,
+    "moduleResolution": "Node" /* Specify how TypeScript looks up a file from a given module specifier. */,
+    "baseUrl": "./" /* Specify the base directory to resolve non-absolute module names. */,
+    "paths": {
+      /* Specify a series of entries for module name to location mapping to be used at resolution time. */
+      "*": ["./src/*"]
+    },
+    "esModuleInterop": true /* Emit additional JavaScript to ease support for importing CommonJS modules. This enables 'allowSyntheticDefaultImports' for type compatibility. */,
+    "forceConsistentCasingInFileNames": true /* Ensure that casing is correct in imports. */,
+
+    /* Type Checking */
+    "strict": true /* Enable all strict type-checking options. */,
+    "noImplicitAny": true /* Enable error reporting for expressions and declarations with an implied 'any' type. */,
+    "noUnusedLocals": true /* Enable error reporting when local variables aren't read. */,
+    "noUnusedParameters": true /* Raise an error when a function parameter isn't read. */,
+    "noImplicitReturns": true /* Enable error reporting for codepaths that do not explicitly return in a function. */,
+    "noFallthroughCasesInSwitch": true /* Enable error reporting for fallthrough cases in switch statements that are not explicitly commented with '// falls through' or a similar convention. */,
+    "noUncheckedIndexedAccess": true /* Include 'undefined' in index signature results */,
+
+    /* Emit */
+    "outDir": "./dist" /* Specify an output folder for all emitted files. */,
+    "removeComments": true /* Do not emit comments to output. */,
+    "sourceMap": true /* Create source map files for emitted JavaScript. */,
+    "declaration": true /* Generate '.d.ts' files from TypeScript and JavaScript files in your project. */,
+    "emitDeclarationOnly": false /* Only emit '.d.ts' declaration files. */,
+
+    /* Interop Constraints */
+    "isolatedModules": true /* Ensure that each file can be safely transpiled without relying on other imports. */,
+
+    /* Completeness */
+    "skipLibCheck": true /* Skip type checking all .d.ts files. */
+  },
+  "include": ["./src"],
+  "exclude": ["node_modules", "./dist", "./tests"]
+}

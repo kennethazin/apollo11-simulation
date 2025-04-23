@@ -5,7 +5,6 @@ import os
 import json
 import datetime
 
-czml = []
 # Constants
 omega = 2.6617e-6         # rad/s, Moon rotation rate
 Re = 1737100              # m, lunar radius
@@ -13,364 +12,634 @@ g0 = 1.62                 # m/s², surface gravity
 mu = g0 * Re**2           # m³/s², gravitational parameter
 deg = np.pi / 180         # degrees to radians
 
-# LM Ascent Stage Parameters
-Thrust = 15600 * 3.3    # N, Increased thrust (corrected from Apollo data)
-Isp = 311                 # s, specific impulse
-mstruc = 2175             # kg, dry mass
-mprop = 2372              # kg, propellant mass
-mpl = 250                 # kg, payload (astronauts, samples, etc.)
-tburn = 435               # s, burn duration (historical)
-m_dot = Thrust / (Isp * 9.81)  # kg/s, mass flow rate
+# CSM Parameters
+csm_alt = 110000          # m, CSM orbital altitude (110 km)
+csm_radius = Re + csm_alt  # m, CSM orbital radius
+csm_velocity = np.sqrt(mu / csm_radius)  # m/s, CSM orbital velocity
+csm_period = 2 * np.pi * csm_radius / csm_velocity  # s, CSM orbital period
 
-m0 = mstruc + mprop + mpl
+# LM Stage Parameters
+# Descent Stage
+LM_Descent_Thrust = 45040  # N, Descent engine thrust
+LM_Descent_Isp = 311       # s, specific impulse
+LM_Descent_mstruc = 2180   # kg, dry mass
+LM_Descent_mprop = 8200    # kg, propellant mass
+LM_Descent_tburn = 756     # s, burn duration for descent
+LM_Descent_mdot = LM_Descent_Thrust / (LM_Descent_Isp * 9.81)  # kg/s
+
+# Ascent Stage 
+LM_Ascent_Thrust = 15600 * 3.3  # N, Ascent engine thrust
+LM_Ascent_Isp = 311            # s, specific impulse
+LM_Ascent_mstruc = 2175        # kg, dry mass
+LM_Ascent_mprop = 2372         # kg, propellant mass
+LM_Ascent_mpl = 250            # kg, payload (astronauts, samples, etc.)
+LM_Ascent_tburn = 435          # s, burn duration for ascent
+LM_Ascent_mdot = LM_Ascent_Thrust / (LM_Ascent_Isp * 9.81)  # kg/s
+
+LM_Descent_m0 = LM_Descent_mstruc + LM_Descent_mprop + LM_Ascent_mstruc + LM_Ascent_mprop + LM_Ascent_mpl
+LM_Ascent_m0 = LM_Ascent_mstruc + LM_Ascent_mprop + LM_Ascent_mpl
 
 # Launch Site Coordinates (Apollo 11 landing site)
-launch_latitude = 0.67416 * deg  # radians
-launch_longitude = (23.47315 + 10.0) * deg  # radians, significantly reduced longitude
-
-# Initial Conditions 
-v0 = 0.1                  # m/s, small initial velocity to avoid division by zero
-gamma0 = 90 * deg         # initial flight path angle (vertical)
-psi0 = 0 * deg            # initial heading angle
-r0 = Re                   # initial radius (on surface)
-theta0 = launch_longitude # initial angular position (longitude)
-phi0 = launch_latitude    # initial latitude
-t_max = 20000              # total sim time (s)
+launch_latitude = 0.67416 * deg  # radians, 0.674 deg N
+launch_longitude = 23.47315 * deg  # radians, 23.473 deg E - actual Apollo 11 landing site
 
 # Target Orbit Parameters
 target_altitude_km = 111  # km, target orbit altitude (historical)
 target_radius = Re + target_altitude_km * 1000  # m
 v_target = np.sqrt(mu / target_radius)  # m/s, target orbital velocity
 
-# Guidance Parameters - ADJUSTED FOR BETTER PERFORMANCE
-vertical_rise_time = 10    # s, vertical rise time
-pitch_over_duration = 200  # s, duration of pitch over maneuver (increased)
-final_pitch = 0 * deg      # final desired pitch angle (horizontal)
+# Simulation time parameters
+t_max_descent = 800       # s, max descent sim time
+t_max_surface = 7200      # s, surface stay time (2 hours)
+t_max_ascent = 1200       # s, max ascent sim time
+t_max_rendezvous = 7200   # s, max rendezvous sim time
 
-# Pitch Program 
-def pitch_program(t):
-    """Returns the target pitch angle at time t"""
-    if t < vertical_rise_time:
-        return 90 * deg  # Vertical rise
-    elif t < vertical_rise_time + pitch_over_duration:
-        # Modified pitch profile with slower initial rotation
-        elapsed = t - vertical_rise_time
-        frac = elapsed / pitch_over_duration
-        # Non-linear pitch program for better performance
-        pitch_angle = 90 * deg * (1 - np.sin(frac * np.pi/2))
-        return max(pitch_angle, final_pitch)
+# CSM Orbit Simulation
+def csm_orbit(t, initial_phase):
+    """Calculate CSM position at time t with given initial phase"""
+    # Orbital period
+    period = csm_period
+    # Current phase
+    phase = initial_phase - (t / period) * 2 * np.pi  # Changed to negative to reverse direction
+    # Position
+    x = csm_radius * np.cos(phase)
+    y = csm_radius * np.sin(phase)
+    z = 0  # Assuming equatorial orbit
+    return x, y, z, phase
+
+# Descent Stage Guidance
+def descent_pitch_program(t, altitude, target_alt=0):
+    """Returns the target pitch angle for descent at time t and altitude"""
+    if t < 30:  # Initial descent phase begins immediately
+        return -5 * deg  # Very slight retrograde burn to initiate descent
+    elif altitude > 50000:  # High altitude approach phase - start much earlier
+        return -15 * deg  # Shallow descent angle for early phase
+    elif altitude > 25000:  # Upper descent corridor
+        # Gradually increase pitch down as we approach
+        frac = (altitude - 25000) / 25000
+        return (-15 - frac * 15) * deg  # -15 to -30 degrees
+    elif altitude > 10000:  # Mid-altitude descent
+        return -35 * deg  # Moderately steep descent angle
+    elif altitude > 3000:  # Approach phase
+        # Gradually increase pitch as we get closer
+        frac = (altitude - 3000) / 7000
+        return (-45 - frac * 15) * deg  # -45 to -60 degrees
+    elif altitude > 1000:  # Final approach
+        return -65 * deg  # Steeper descent for final approach
+    else:  # Terminal descent
+        # Final vertical descent to landing
+        frac = altitude / 1000
+        return (-75 - frac * 15) * deg  # -75 to -90 degrees (vertical at touchdown)
+
+def descent_throttle_program(t, altitude, velocity):
+    """Returns thrust fraction based on altitude and velocity"""
+    descent_rate = -velocity  # Convert to positive for easier logic (higher is faster descent)
+    
+    if altitude > 20000:
+        # Initial deorbit and braking
+        if descent_rate < 20:  # Need to increase descent rate
+            return 0.4  # Lower thrust to allow gravity to pull us down
+        else:
+            return 0.6  # Moderate thrust
+    elif altitude > 8000:
+        # Mid-descent braking
+        if descent_rate > 50:  # Too fast
+            return 0.9  # High thrust to slow down
+        else:
+            return 0.7  # Moderate thrust
+    elif altitude > 2000:
+        # Approach phase - controlling descent rate
+        if descent_rate > 30:
+            return 0.8  # Slow down
+        else:
+            return 0.6  # Steady descent
     else:
-        return final_pitch  # Horizontal flight
+        # Terminal descent - precise control
+        if descent_rate > 5:  # Too fast for landing
+            return 0.75  # More thrust to slow down
+        elif descent_rate < 2:  # Too slow
+            return 0.5  # Less thrust to maintain safe descent rate
+        else:
+            return 0.65  # Gentle, controlled descent to surface
 
-def throttle_program(t, h, v):
-    """Returns thrust fraction based on time and state"""
-    if t < tburn:
+# Descent Trajectory Simulation
+def descent_derivatives(t, state):
+    """Calculate state derivatives for lunar descent"""
+    r, theta, phi, v, gamma, psi, m = state
+    
+    # Local gravity
+    g = mu / r**2
+    
+    # Determine thrust
+    remaining_propellant = m - (LM_Descent_mstruc + LM_Ascent_m0)
+    if t < LM_Descent_tburn and remaining_propellant > 0:
+        altitude = r - Re
+        # For descent, negative velocity means descending
+        descent_rate = -v * np.sin(gamma)
+        throttle = descent_throttle_program(t, altitude, descent_rate)
+        T = LM_Descent_Thrust * throttle
+        mdot = -LM_Descent_mdot * throttle
+    else:
+        T = 0
+        mdot = 0
+    
+    # Target pitch from guidance (negative for descent)
+    gamma_target = descent_pitch_program(t, r - Re)
+    
+    # Simple guidance
+    K_p = 0.1  # Proportional gain
+    max_rate = 1.0 * deg  # Max angular rate
+    gamma_dot = np.clip(K_p * (gamma_target - gamma), -max_rate, max_rate)
+    
+    # Position derivatives - for descent gamma is negative, so r_dot is negative
+    r_dot = v * np.sin(gamma)
+    theta_dot = v * np.cos(gamma) * np.cos(psi) / (r * np.cos(phi))
+    phi_dot = v * np.cos(gamma) * np.sin(psi) / r
+    
+    # Steering toward landing site as we get closer
+    if r - Re < 10000:
+        # Calculate bearing to landing site
+        dlambda = launch_longitude - theta
+        if dlambda > np.pi: dlambda -= 2*np.pi
+        if dlambda < -np.pi: dlambda += 2*np.pi
+        
+        y = np.sin(dlambda) * np.cos(launch_latitude)
+        x = np.cos(phi) * np.sin(launch_latitude) - np.sin(phi) * np.cos(launch_latitude) * np.cos(dlambda)
+        bearing = np.arctan2(y, x)
+        
+        # Adjust heading toward landing site
+        psi_dot = np.clip(0.1 * (bearing - psi), -max_rate, max_rate)
+    else:
+        psi_dot = 0
+    
+    # Velocity derivative - thrust opposes gravity for controlled descent
+    a_thrust = T / m
+    a_gravity = -g  # Gravity pulls downward
+    
+    # For descent: thrust works against gravity, positive thrust slows descent
+    v_dot = a_thrust * np.sin(abs(gamma)) + a_gravity * np.sin(gamma)
+    
+    return [r_dot, theta_dot, phi_dot, v_dot, gamma_dot, psi_dot, mdot]
+
+# Event function for reaching surface
+def reach_surface(t, state):
+    r, theta, phi, v, gamma, psi, m = state
+    return r - Re
+reach_surface.terminal = True
+reach_surface.direction = -1  # Trigger when crossing from above
+
+# Ascent Stage Guidance
+def ascent_pitch_program(t):
+    """Returns the target pitch angle at time t during ascent"""
+    if t < 10:
+        return 90 * deg  # Vertical rise
+    elif t < 200:
+        # Gradually pitch over
+        frac = (t - 10) / 190
+        return 90 * deg * (1 - np.sin(frac * np.pi/2))
+    else:
+        return 0 * deg  # Horizontal flight
+
+def ascent_throttle_program(t, h, v):
+    """Returns thrust fraction based on time and state during ascent"""
+    if t < LM_Ascent_tburn:
         if h > target_radius - Re - 10000:  # Near target altitude
-            # Throttle based on altitude error
             alt_error = (target_radius - Re - h) / 10000
             return max(0.6, min(1.0, alt_error + 0.6))
         return 1.0  # Full thrust
     return 0.0  # Engine cutoff
 
-def derivatives(t, state):
-    """Calculates state derivatives in a rotating reference frame"""
-    r, theta, v, gamma, m = state
+# Ascent Trajectory Simulation
+def ascent_derivatives(t, state):
+    """Calculate state derivatives for lunar ascent"""
+    r, theta, phi, v, gamma, psi, m = state
     
-    # Calculate local gravity
+    # Local gravity
     g = mu / r**2
     
     # Determine if engine is burning and remaining propellant
-    remaining_propellant = m - (mstruc + mpl)
-    if t < tburn and remaining_propellant > 0:
-        throttle = throttle_program(t, r - Re, v)
-        T = Thrust * throttle
-        mdot = -m_dot * throttle
+    remaining_propellant = m - (LM_Ascent_mstruc + LM_Ascent_mpl)
+    if t < LM_Ascent_tburn and remaining_propellant > 0:
+        throttle = ascent_throttle_program(t, r - Re, v)
+        T = LM_Ascent_Thrust * throttle
+        mdot = -LM_Ascent_mdot * throttle
     else:
         T = 0
         mdot = 0
     
     # Target pitch from guidance
-    gamma_target = pitch_program(t)
+    gamma_target = ascent_pitch_program(t)
     
-    # Simple proportional control for pitch rate with rate limiting
+    # Simple proportional control for pitch
     K_p = 0.1  # Proportional gain
     max_rate = 0.5 * deg  # Maximum pitch rate (deg/s)
-    desired_rate = K_p * (gamma_target - gamma)
-    gamma_dot = np.clip(desired_rate, -max_rate, max_rate)
+    gamma_dot = np.clip(K_p * (gamma_target - gamma), -max_rate, max_rate)
     
-    # State derivatives
+    # Position derivatives
     r_dot = v * np.sin(gamma)
-    theta_dot = v * np.cos(gamma) / r
+    theta_dot = v * np.cos(gamma) * np.cos(psi) / (r * np.cos(phi))
+    phi_dot = v * np.cos(gamma) * np.sin(psi) / r
     
-    # Acceleration components
+    # Calculate CSM position for rendezvous guidance
+    # This is simplified - in reality would need more complex rendezvous logic
+    if r - Re > 20000:  # Only start rendezvous guidance at higher altitude
+        psi_dot = 0  # Maintain heading during initial ascent
+    else:
+        psi_dot = 0  # Simplified - would need actual rendezvous guidance here
+    
+    # Velocity derivative
     a_thrust = T / m
     a_gravity = -g
-    a_centripetal = v**2 * np.cos(gamma)**2 / r  # Centripetal acceleration
+    a_centripetal = v**2 * np.cos(gamma)**2 / r
     
-    # Velocity derivative (corrected with all components)
     v_dot = a_thrust + a_gravity * np.sin(gamma) + a_centripetal * np.sin(gamma)
     
-    return [r_dot, theta_dot, v_dot, gamma_dot, mdot]
+    return [r_dot, theta_dot, phi_dot, v_dot, gamma_dot, psi_dot, mdot]
 
-# Event function for reaching target altitude 
+# Event function for reaching target altitude
 def reach_target_altitude(t, state):
-    r, theta, v, gamma, m = state
+    r, theta, phi, v, gamma, psi, m = state
     return r - target_radius
-reach_target_altitude.terminal = False
-reach_target_altitude.direction = 1  # Only trigger when crossing from below
+reach_target_altitude.terminal = True
+reach_target_altitude.direction = 1  # Trigger when crossing from below
 
-# Event function for propellant depletion 
-def propellant_depleted(t, state):
-    r, theta, v, gamma, m = state
-    return m - (mstruc + mpl) - 1.0  # 1kg margin
-propellant_depleted.terminal = False
-propellant_depleted.direction = -1  # Only trigger when crossing from above
+# Run the simulations
+# 1. CSM orbit - generate positions for the entire mission
+mission_start = datetime.datetime(1969, 7, 20, 17, 0, 0)  # Approximate
+landing_time = datetime.datetime(1969, 7, 20, 20, 17, 40)
+takeoff_time = datetime.datetime(1969, 7, 21, 17, 54, 0)
+mission_end = datetime.datetime(1969, 7, 21, 21, 0, 0)
 
-initial_state = [r0, theta0, v0, gamma0, m0]
-sol = solve_ivp(
-    derivatives, 
-    [0, t_max], 
-    initial_state, 
+total_mission_time = (mission_end - mission_start).total_seconds()
+csm_times = np.linspace(0, total_mission_time, 1000)
+csm_initial_phase = 0  # Starting position of CSM
+csm_positions = np.array([csm_orbit(t, csm_initial_phase) for t in csm_times])
+csm_x, csm_y, csm_z, csm_phases = csm_positions.T
+
+# 2. Descent stage - from CSM orbit to surface
+# Initial state: [radius, longitude, latitude, velocity, flight_path_angle, heading, mass]
+descent_initial_state = [
+    csm_radius,               # Initial radius (CSM orbit)
+    launch_longitude + 0.2,   # Initial longitude (farther from landing site to allow gradual approach)
+    launch_latitude,          # Initial latitude
+    csm_velocity,             # Initial velocity (orbital velocity)
+    -5 * deg,                 # Initial flight path angle (shallow descent)
+    180 * deg,                # Initial heading (toward landing site)
+    LM_Descent_m0             # Initial mass (descent + ascent stages)
+]
+
+print("Simulating descent trajectory...")
+descent_sol = solve_ivp(
+    descent_derivatives, 
+    [0, t_max_descent], 
+    descent_initial_state,
     method='RK45',
-    events=[reach_target_altitude, propellant_depleted],
+    events=[reach_surface],
     rtol=1e-6, 
-    atol=1e-8,
-    max_step=1.0
+    atol=1e-8
 )
 
+descent_t = descent_sol.t
+descent_r = descent_sol.y[0]
+descent_theta = descent_sol.y[1]
+descent_phi = descent_sol.y[2]
+descent_v = descent_sol.y[3]
+descent_gamma = descent_sol.y[4]
+descent_psi = descent_sol.y[5]
+descent_m = descent_sol.y[6]
 
-t = sol.t
-r = sol.y[0]
-theta = sol.y[1]
-v = sol.y[2]
-gamma = sol.y[3]
-m = sol.y[4]
+print(f"Descent complete. Landing coordinates: {descent_phi[-1]/deg:.5f}°N, {descent_theta[-1]/deg:.5f}°E")
+print(f"Distance from target: {Re * np.sqrt((descent_phi[-1] - launch_latitude)**2 + (descent_theta[-1] - launch_longitude)**2):.2f} m")
+print(f"Final descent velocity: {descent_v[-1]:.2f} m/s")
+print(f"Propellant remaining: {descent_m[-1] - (LM_Descent_mstruc + LM_Ascent_m0):.2f} kg")
 
-h = r - Re                     # m, altitude
-h_km = h / 1000                # km, altitude
-v_km_s = v / 1000              # km/s, velocity
-gamma_deg = gamma / deg        # deg, flight path angle
-dx = r * np.sin(theta)         # m, x-position
-dy = r * np.cos(theta)         # m, y-position
-downrange = theta * Re / 1000  # km, downrange distance
-accel = np.zeros_like(t)       # m/s², acceleration
+# 3. Ascent stage - from surface to CSM orbit
+ascent_initial_state = [
+    Re,                 # Initial radius (surface)
+    descent_theta[-1],  # Initial longitude (landing site)
+    descent_phi[-1],    # Initial latitude (landing site) 
+    0.1,                # Initial velocity (small non-zero)
+    90 * deg,           # Initial flight path angle (vertical)
+    0.0,                # Initial heading (will adjust for rendezvous)
+    LM_Ascent_m0        # Initial mass (ascent stage only)
+]
 
-# Calculate acceleration (including thrust and gravity)
-for i in range(len(t)):
-    if i < len(t) and m[i] > mstruc + mpl:
-        accel[i] = Thrust / m[i]
-    else:
-        accel[i] = 0
+print("Simulating ascent trajectory...")
+ascent_sol = solve_ivp(
+    ascent_derivatives, 
+    [0, t_max_ascent], 
+    ascent_initial_state,
+    method='RK45',
+    events=[reach_target_altitude],
+    rtol=1e-6, 
+    atol=1e-8
+)
 
-print("\n--- Apollo 11 Eagle Ascent Simulation Results ---")
-print(f"Simulation time: {t[-1]:.1f} seconds")
-print(f"Final Altitude: {h_km[-1]:.2f} km")
-print(f"Final Velocity: {v_km_s[-1]:.4f} km/s")
-print(f"Target Velocity: {v_target/1000:.4f} km/s")
-print(f"Velocity Error: {(v[-1]-v_target)/1000:.4f} km/s")
-print(f"Final Flight Path Angle: {gamma_deg[-1]:.2f} degrees")
-print(f"Downrange Distance: {downrange[-1]:.2f} km")
-print(f"Propellant Remaining: {m[-1] - mstruc - mpl:.2f} kg")
-print(f"Reason for termination: {'Target altitude reached' if r[-1] >= target_radius else 'Propellant depleted'}")
+ascent_t = ascent_sol.t
+ascent_r = ascent_sol.y[0]
+ascent_theta = ascent_sol.y[1]
+ascent_phi = ascent_sol.y[2]
+ascent_v = ascent_sol.y[3]
+ascent_gamma = ascent_sol.y[4]
+ascent_psi = ascent_sol.y[5]
+ascent_m = ascent_sol.y[6]
 
+print(f"Ascent complete.")
+print(f"Final altitude: {(ascent_r[-1] - Re)/1000:.2f} km")
+print(f"Final velocity: {ascent_v[-1]:.2f} m/s (target: {v_target:.2f} m/s)")
+print(f"Propellant remaining: {ascent_m[-1] - (LM_Ascent_mstruc + LM_Ascent_mpl):.2f} kg")
+
+# Calculate actual mission timestamps
+descent_start_time = landing_time - datetime.timedelta(seconds=descent_t[-1])
+surface_start_time = landing_time
+ascent_start_time = takeoff_time
+ascent_end_time = takeoff_time + datetime.timedelta(seconds=ascent_t[-1])
+
+# Create Cartesian coordinates for visualization
+# Convert spherical coordinates to cartesian for visualization
+def sphere_to_cart(r, theta, phi):
+    x = r * np.cos(phi) * np.cos(theta)
+    y = r * np.cos(phi) * np.sin(theta)
+    z = r * np.sin(phi)
+    return x, y, z
+
+# CSM trajectory
+csm_cart = np.array([sphere_to_cart(csm_radius, csm_phases[i], 0) for i in range(len(csm_times))])
+csm_x, csm_y, csm_z = csm_cart.T
+
+# Descent trajectory
+descent_cart = np.array([sphere_to_cart(descent_r[i], descent_theta[i], descent_phi[i]) for i in range(len(descent_t))])
+descent_x, descent_y, descent_z = descent_cart.T
+
+# Ascent trajectory
+ascent_cart = np.array([sphere_to_cart(ascent_r[i], ascent_theta[i], ascent_phi[i]) for i in range(len(ascent_t))])
+ascent_x, ascent_y, ascent_z = ascent_cart.T
+
+# Visualize the trajectories
 plt.figure(figsize=(15, 10))
 
-# Altitude vs Time
-plt.subplot(2, 3, 1)
-plt.plot(t, h_km)
-plt.axhline(y=target_altitude_km, color='r', linestyle='--', label='Target Altitude')
-plt.title('Altitude vs Time')
+# 3D plot of all trajectories
+ax = plt.subplot(2, 2, 1, projection='3d')
+# Draw the Moon
+u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
+x_moon = Re * np.cos(u) * np.sin(v)
+y_moon = Re * np.sin(u) * np.sin(v)
+z_moon = Re * np.cos(v)
+ax.plot_surface(x_moon, y_moon, z_moon, color='gray', alpha=0.2)
+
+# Plot CSM orbit
+ax.plot(csm_x, csm_y, csm_z, 'b-', label='CSM Orbit')
+
+# Plot descent
+ax.plot(descent_x, descent_y, descent_z, 'r-', label='Descent')
+
+# Plot ascent
+ax.plot(ascent_x, ascent_y, ascent_z, 'g-', label='Ascent')
+
+ax.set_title('Complete Mission Trajectory')
+ax.set_xlabel('X (m)')
+ax.set_ylabel('Y (m)')
+ax.set_zlabel('Z (m)')
+ax.legend()
+
+# Plot altitude vs time for descent
+plt.subplot(2, 2, 2)
+plt.plot(descent_t, descent_r - Re)
+plt.title('Descent: Altitude vs Time')
 plt.xlabel('Time (s)')
-plt.ylabel('Altitude (km)')
+plt.ylabel('Altitude (m)')
+plt.grid(True)
+
+# Plot altitude vs time for ascent
+plt.subplot(2, 2, 3)
+plt.plot(ascent_t, ascent_r - Re)
+plt.axhline(y=target_altitude_km*1000, color='r', linestyle='--', label='Target Altitude')
+plt.title('Ascent: Altitude vs Time')
+plt.xlabel('Time (s)')
+plt.ylabel('Altitude (m)')
 plt.grid(True)
 plt.legend()
 
-# Velocity vs Time
-plt.subplot(2, 3, 2)
-plt.plot(t, v_km_s)
-plt.axhline(y=v_target/1000, color='r', linestyle='--', label='Target Velocity')
+# Plot velocity vs time
+plt.subplot(2, 2, 4)
+plt.plot(descent_t, descent_v, 'r-', label='Descent')
+plt.plot(ascent_t, ascent_v, 'g-', label='Ascent')
+plt.axhline(y=v_target, color='b', linestyle='--', label='Orbit Velocity')
 plt.title('Velocity vs Time')
 plt.xlabel('Time (s)')
-plt.ylabel('Velocity (km/s)')
-plt.grid(True)
-plt.legend()
-
-# Flight Path Angle vs Time
-plt.subplot(2, 3, 3)
-plt.plot(t, gamma_deg)
-plt.title('Flight Path Angle vs Time')
-plt.xlabel('Time (s)')
-plt.ylabel('Flight Path Angle (deg)')
-plt.grid(True)
-
-# Trajectory in Lunar Reference Frame
-plt.subplot(2, 3, 4)
-# Plot the Moon
-moon_circle = plt.Circle((0, 0), Re/1000, color='gray', alpha=0.3)
-plt.gca().add_patch(moon_circle)
-
-# Plot the trajectory
-plt.plot(dx/1000, dy/1000, 'b-')
-plt.axis('equal')
-plt.title('Trajectory (Lunar Reference Frame)')
-plt.xlabel('X (km)')
-plt.ylabel('Y (km)')
-plt.grid(True)
-
-# Downrange vs Altitude
-plt.subplot(2, 3, 5)
-plt.plot(downrange, h_km)
-plt.title('Trajectory Profile')
-plt.xlabel('Downrange Distance (km)')
-plt.ylabel('Altitude (km)')
-plt.grid(True)
-
-# Mass vs Time
-plt.subplot(2, 3, 6)
-plt.plot(t, m)
-plt.axhline(y=mstruc+mpl, color='r', linestyle='--', label='Dry Mass')
-plt.title('Vehicle Mass vs Time')
-plt.xlabel('Time (s)')
-plt.ylabel('Mass (kg)')
+plt.ylabel('Velocity (m/s)')
 plt.grid(True)
 plt.legend()
 
 plt.tight_layout()
 plt.show()
 
-plt.figure(figsize=(15, 5))
-
-# Acceleration vs Time
-plt.subplot(1, 3, 1)
-plt.plot(t, accel)
-plt.title('Acceleration vs Time')
-plt.xlabel('Time (s)')
-plt.ylabel('Acceleration (m/s²)')
-plt.grid(True)
-
-# Mass Flow Rate
-plt.subplot(1, 3, 2)
-m_flow = np.zeros_like(t)
-for i in range(len(t)-1):
-    m_flow[i] = (m[i+1] - m[i])/(t[i+1] - t[i])
-plt.plot(t[:-1], -m_flow[:-1])  # Negative because mass decreases
-plt.title('Mass Flow Rate vs Time')
-plt.xlabel('Time (s)')
-plt.ylabel('Mass Flow Rate (kg/s)')
-plt.grid(True)
-
-# Guidance vs Actual Flight Path Angle
-plt.subplot(1, 3, 3)
-guidance_angle = np.array([pitch_program(time) for time in t])
-plt.plot(t, guidance_angle/deg, 'r--', label='Guidance')
-plt.plot(t, gamma_deg, 'b-', label='Actual')
-plt.title('Guidance vs Actual Flight Path Angle')
-plt.xlabel('Time (s)')
-plt.ylabel('Angle (deg)')
-plt.legend()
-plt.grid(True)
-
-plt.tight_layout()
-plt.show()
-
-# Set the epoch to the actual date and time of Apollo 11 lunar module descent
-epoch = datetime.datetime(1969, 7, 20, 19, 0, 0)  # Start of descent stage
-
-# Define realistic availability times for descent and ascent stages
-descent_start_time = datetime.datetime(1969, 7, 20, 19, 0, 0)  # Start of descent
-descent_end_time = datetime.datetime(1969, 7, 20, 21, 17, 40)  # Landing time
-ascent_start_time = datetime.datetime(1969, 7, 21, 17, 54, 0)  # Ascent start time
-ascent_end_time = datetime.datetime(1969, 7, 21, 18, 21, 50)  # Ascent end time
-
-# Generate CZML data
+# Generate CZML for Cesium visualization
 czml = [
     {
-        "id": "document",  # Add the document ID
-        "name": "CSM-LM Trajectory",
+        "id": "document",
+        "name": "Apollo 11 Moon Mission",
         "version": "1.0",
         "clock": {
-            "interval": f"{descent_start_time.isoformat()}Z/{ascent_end_time.isoformat()}Z",
-            "currentTime": f"{descent_start_time.isoformat()}Z",
+            "interval": f"{mission_start.isoformat()}Z/{mission_end.isoformat()}Z",
+            "currentTime": f"{mission_start.isoformat()}Z",
+            "multiplier": 60,  # Speed up playback
             "range": "LOOP_STOP",
             "step": "SYSTEM_CLOCK_MULTIPLIER"
+        }
+    },
+    # Add the Moon
+    {
+        "id": "Moon",
+        "name": "Moon",
+        "position": {
+            "cartesian": [0, 0, 0]
+        },
+        "ellipsoid": {
+            "radii": {
+                "cartesian": [Re, Re, Re]
+            },
+            "material": {
+                "solidColor": {
+                    "color": {
+                        "rgba": [200, 200, 200, 255]
+                    }
+                }
+            }
         }
     }
 ]
 
-# Reverse the ascent stage trajectory for the descent stage
-descent_positions = []
-for i in range(len(t) - 1, -1, -1):  # Reverse the ascent stage trajectory
-    # Reverse altitude, velocity, and pitch angle changes
-    x = r[i] * np.cos(launch_latitude) * np.sin(theta[i] + launch_longitude)
-    y = r[i] * np.cos(launch_latitude) * np.cos(theta[i] + launch_longitude)
-    z = r[i] * np.sin(launch_latitude) * 5  # Multiply z by 5
-    descent_positions.extend([t_max - t[i], x, y, z])  # Reverse time for descent
+# Add CSM trajectory
+csm_positions = []
+csm_time_increment = total_mission_time / 1000
+for i in range(len(csm_times)):
+    time_seconds = csm_times[i]
+    csm_positions.extend([time_seconds, csm_x[i], csm_y[i], csm_z[i]])
 
-# Add descent stage trajectory (reverse of ascent stage)
 czml.append({
-    "id": "DescentStage",
-    "availability": f"{descent_start_time.isoformat()}Z/{descent_end_time.isoformat()}Z",
+    "id": "CSM",
+    "name": "Columbia CSM",
+    "availability": f"{mission_start.isoformat()}Z/{mission_end.isoformat()}Z",
     "path": {
-        "leadTime": 0,
         "material": {
             "solidColor": {
-                "color": { 
-                    "rgba": [255, 0, 0, 255]  # Red color for descent stage
+                "color": {
+                    "rgba": [0, 0, 255, 255]  # Blue
                 }
             }
         },
         "width": 2,
+        "leadTime": 0,
+        "trailTime": csm_period,  # Show one orbit of trail
+        "resolution": 120,
         "show": True
     },
     "position": {
-        "interpolationAlgorithm": "LINEAR",
-        "epoch": descent_start_time.isoformat() + "Z",
+        "interpolationAlgorithm": "LAGRANGE",
+        "interpolationDegree": 2,
+        "epoch": f"{mission_start.isoformat()}Z",
+        "cartesian": csm_positions
+    },
+    "model": {
+        "gltf": "/models/csm/csm.gltf",
+        "minimumPixelSize": 64,
+        "maximumScale": 20000
+    },
+    "label": {
+        "text": "Columbia CSM",
+        "font": "11pt Lucida Console",
+        "style": "FILL_AND_OUTLINE",
+        "outlineWidth": 2,
+        "outlineColor": {
+            "rgba": [0, 0, 0, 255]
+        },
+        "horizontalOrigin": "LEFT",
+        "verticalOrigin": "TOP",
+        "pixelOffset": {
+            "cartesian2": [10, 0]
+        },
+        "fillColor": {
+            "rgba": [255, 255, 255, 255]
+        },
+        "show": True
+    }
+})
+
+# Add LM Descent trajectory
+descent_positions = []
+for i in range(len(descent_t)):
+    time_seconds = descent_t[i]
+    descent_positions.extend([time_seconds, descent_x[i], descent_y[i], descent_z[i]])
+
+czml.append({
+    "id": "LM_Descent",
+    "name": "Eagle Descent",
+    "availability": f"{descent_start_time.isoformat()}Z/{landing_time.isoformat()}Z",
+    "path": {
+        "material": {
+            "solidColor": {
+                "color": {
+                    "rgba": [255, 0, 0, 255]  # Red
+                }
+            }
+        },
+        "width": 3,
+        "leadTime": 0,
+        "trailTime": 600,  # Show 10 min of trail
+        "show": True
+    },
+    "position": {
+        "interpolationAlgorithm": "LAGRANGE",
+        "interpolationDegree": 2,
+        "epoch": f"{descent_start_time.isoformat()}Z",
         "cartesian": descent_positions
     },
     "model": {
         "gltf": "/models/lm/lunarmodule.gltf",
         "minimumPixelSize": 64,
         "maximumScale": 20000
+    },
+    "label": {
+        "text": "Eagle LM (Descent)",
+        "show": True
     }
 })
 
-# Add ascent stage trajectory (Apollo 11 ascent profile)
-ascent_positions = []
-for i in range(len(t)):
-    x = r[i] * np.cos(launch_latitude) * np.sin(theta[i] + launch_longitude)
-    y = r[i] * np.cos(launch_latitude) * np.cos(theta[i] + launch_longitude)
-    z = r[i] * np.sin(launch_latitude) * 5  # Multiply z by 5
-    ascent_positions.extend([t[i], x, y, z])
+# Add surface stay
+landing_site_x, landing_site_y, landing_site_z = sphere_to_cart(Re, descent_theta[-1], descent_phi[-1])
 
 czml.append({
-    "id": "AscentStage",
+    "id": "LM_Surface",
+    "name": "Eagle on Surface",
+    "availability": f"{landing_time.isoformat()}Z/{ascent_start_time.isoformat()}Z",
+    "position": {
+        "cartesian": [landing_site_x, landing_site_y, landing_site_z]
+    },
+    "model": {
+        "gltf": "/models/lm/lunar_lander.gltf",
+        "minimumPixelSize": 64,
+        "maximumScale": 20000
+    },
+    "label": {
+        "text": "Tranquility Base",
+        "show": True
+    },
+    "point": {
+        "color": {
+            "rgba": [255, 255, 0, 255]
+        },
+        "outlineColor": {
+            "rgba": [0, 0, 0, 255]
+        },
+        "outlineWidth": 2,
+        "pixelSize": 10,
+        "show": True
+    }
+})
+
+# Add LM Ascent trajectory
+ascent_positions = []
+for i in range(len(ascent_t)):
+    time_seconds = ascent_t[i]
+    ascent_positions.extend([time_seconds, ascent_x[i], ascent_y[i], ascent_z[i]])
+
+czml.append({
+    "id": "LM_Ascent",
+    "name": "Eagle Ascent",
     "availability": f"{ascent_start_time.isoformat()}Z/{ascent_end_time.isoformat()}Z",
     "path": {
-        "leadTime": 0,
         "material": {
             "solidColor": {
                 "color": {
-                    "rgba": [0, 255, 0, 255]  # Green color for ascent stage
+                    "rgba": [0, 255, 0, 255]  # Green
                 }
             }
         },
-        "width": 2,
+        "width": 3,
+        "leadTime": 0,
+        "trailTime": 600,  # Show 10 min of trail
         "show": True
     },
     "position": {
-        "interpolationAlgorithm": "LINEAR",
-        "epoch": ascent_start_time.isoformat() + "Z",
+        "interpolationAlgorithm": "LAGRANGE",
+        "interpolationDegree": 2,
+        "epoch": f"{ascent_start_time.isoformat()}Z",
         "cartesian": ascent_positions
     },
     "model": {
-        "gltf": "/models/lm/lunarmodule.gltf",
+        "gltf": "/models/lm/lm_ascent.gltf",
         "minimumPixelSize": 64,
         "maximumScale": 20000
+    },
+    "label": {
+        "text": "Eagle LM (Ascent)",
+        "show": True
     }
 })
 
 # Write CZML to file
-czml_file_path = os.path.join(os.path.dirname(__file__), "csm_lm_trajectory.czml")
+czml_file_path = os.path.join(os.path.dirname(__file__), "apollo11_mission.czml")
 with open(czml_file_path, "w") as czml_file:
     json.dump(czml, czml_file, indent=2)
 
