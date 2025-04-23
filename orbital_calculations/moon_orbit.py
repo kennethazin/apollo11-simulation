@@ -60,67 +60,69 @@ def csm_orbit(t, initial_phase):
     # Orbital period
     period = csm_period
     # Current phase
-    phase = initial_phase - (t / period) * 2 * np.pi  # Changed to negative to reverse direction
+    phase = initial_phase - (t / period) * 2 * np.pi  
     # Position
     x = csm_radius * np.cos(phase)
     y = csm_radius * np.sin(phase)
     z = 0  # Assuming equatorial orbit
     return x, y, z, phase
-
 # Descent Stage Guidance
 def descent_pitch_program(t, altitude, target_alt=0):
     """Returns the target pitch angle for descent at time t and altitude"""
-    if t < 30:  # Initial descent phase begins immediately
-        return -5 * deg  # Very slight retrograde burn to initiate descent
-    elif altitude > 50000:  # High altitude approach phase - start much earlier
-        return -15 * deg  # Shallow descent angle for early phase
-    elif altitude > 25000:  # Upper descent corridor
-        # Gradually increase pitch down as we approach
-        frac = (altitude - 25000) / 25000
-        return (-15 - frac * 15) * deg  # -15 to -30 degrees
-    elif altitude > 10000:  # Mid-altitude descent
-        return -35 * deg  # Moderately steep descent angle
-    elif altitude > 3000:  # Approach phase
-        # Gradually increase pitch as we get closer
-        frac = (altitude - 3000) / 7000
-        return (-45 - frac * 15) * deg  # -45 to -60 degrees
-    elif altitude > 1000:  # Final approach
-        return -65 * deg  # Steeper descent for final approach
-    else:  # Terminal descent
-        # Final vertical descent to landing
-        frac = altitude / 1000
-        return (-75 - frac * 15) * deg  # -75 to -90 degrees (vertical at touchdown)
-
-def descent_throttle_program(t, altitude, velocity):
-    """Returns thrust fraction based on altitude and velocity"""
-    descent_rate = -velocity  # Convert to positive for easier logic (higher is faster descent)
+    # Pre-PDI phase (from 19:08 to 20:05) - very shallow trajectory
+    if t < pdi_seconds:
+        return -1 * deg  # Very shallow descent angle before PDI
     
-    if altitude > 20000:
-        # Initial deorbit and braking
-        if descent_rate < 20:  # Need to increase descent rate
-            return 0.4  # Lower thrust to allow gravity to pull us down
-        else:
-            return 0.6  # Moderate thrust
-    elif altitude > 8000:
-        # Mid-descent braking
-        if descent_rate > 50:  # Too fast
-            return 0.9  # High thrust to slow down
-        else:
-            return 0.7  # Moderate thrust
-    elif altitude > 2000:
-        # Approach phase - controlling descent rate
-        if descent_rate > 30:
-            return 0.8  # Slow down
-        else:
-            return 0.6  # Steady descent
+    # Target approximately 12.5 minutes from PDI to landing
+    target_descent_duration = 12.5 * 60  # 12.5 minutes in seconds
+    
+    # Calculate how far we are into the post-PDI descent as a percentage
+    elapsed_since_pdi = t - pdi_seconds
+    descent_progress = min(1.0, elapsed_since_pdi / target_descent_duration)
+    
+    # More gradual pitch transitions based on progress
+    if descent_progress < 0.1:  # Initial post-PDI phase
+        return -10 * deg
+    elif descent_progress < 0.3:
+        return -15 * deg
+    elif descent_progress < 0.5:
+        return -25 * deg
+    elif descent_progress < 0.7:
+        return -35 * deg
+    elif descent_progress < 0.85:
+        return -50 * deg
+    elif descent_progress < 0.95:
+        return -70 * deg
     else:
-        # Terminal descent - precise control
-        if descent_rate > 5:  # Too fast for landing
-            return 0.75  # More thrust to slow down
-        elif descent_rate < 2:  # Too slow
-            return 0.5  # Less thrust to maintain safe descent rate
+        return -85 * deg  # Final approach
+    
+def descent_throttle_program(t, altitude, velocity):
+    """Returns thrust fraction based on time, altitude and velocity"""
+    descent_rate = -velocity  # Convert to positive for easier logic
+    
+    # Pre-PDI phase - minimal thrust for orbital adjustment
+    if t < pdi_seconds:
+        return 0.05  # Minimal thrust for shallow descent initiation
+    
+    # Target slower descent times
+    target_descent_duration = 12.5 * 60  # 12.5 minutes in seconds
+    elapsed_since_pdi = t - pdi_seconds
+    
+    # Limit throttle to slow down descent
+    if altitude > 10000:
+        return min(0.5, 0.2 + elapsed_since_pdi/800)  # Gradually increase to 0.5
+    elif altitude > 4000:
+        return 0.6  # Moderate thrust
+    elif altitude > 1000:
+        if descent_rate > 15:
+            return 0.7  # Slow down if descending too fast
+        return 0.55  # Otherwise moderate thrust
+    else:
+        # Terminal descent - hover longer
+        if descent_rate > 5:
+            return 0.65  # More thrust to slow down
         else:
-            return 0.65  # Gentle, controlled descent to surface
+            return 0.5  # Very gentle final descent
 
 # Descent Trajectory Simulation
 def descent_derivatives(t, state):
@@ -156,21 +158,8 @@ def descent_derivatives(t, state):
     theta_dot = v * np.cos(gamma) * np.cos(psi) / (r * np.cos(phi))
     phi_dot = v * np.cos(gamma) * np.sin(psi) / r
     
-    # Steering toward landing site as we get closer
-    if r - Re < 10000:
-        # Calculate bearing to landing site
-        dlambda = launch_longitude - theta
-        if dlambda > np.pi: dlambda -= 2*np.pi
-        if dlambda < -np.pi: dlambda += 2*np.pi
-        
-        y = np.sin(dlambda) * np.cos(launch_latitude)
-        x = np.cos(phi) * np.sin(launch_latitude) - np.sin(phi) * np.cos(launch_latitude) * np.cos(dlambda)
-        bearing = np.arctan2(y, x)
-        
-        # Adjust heading toward landing site
-        psi_dot = np.clip(0.1 * (bearing - psi), -max_rate, max_rate)
-    else:
-        psi_dot = 0
+
+    psi_dot = 0
     
     # Velocity derivative - thrust opposes gravity for controlled descent
     a_thrust = T / m
@@ -266,27 +255,36 @@ reach_target_altitude.direction = 1  # Trigger when crossing from below
 # Run the simulations
 # 1. CSM orbit - generate positions for the entire mission
 mission_start = datetime.datetime(1969, 7, 20, 17, 0, 0)  # Approximate
-landing_time = datetime.datetime(1969, 7, 20, 20, 17, 40)
+descent_start_time = datetime.datetime(1969, 7, 20, 19, 8, 0)  # Start of descent at 19:08 UT
+pdi_time = datetime.datetime(1969, 7, 20, 20, 5, 0)  # Powered Descent Initiation at 20:05 UT
+landing_time = datetime.datetime(1969, 7, 20, 20, 17, 40)  # Actual landing time
 takeoff_time = datetime.datetime(1969, 7, 21, 17, 54, 0)
 mission_end = datetime.datetime(1969, 7, 21, 21, 0, 0)
 
 total_mission_time = (mission_end - mission_start).total_seconds()
 csm_times = np.linspace(0, total_mission_time, 1000)
-csm_initial_phase = 0  # Starting position of CSM
+csm_initial_phase = 0  # Starting position of CSM (45 degrees back from 0)
 csm_positions = np.array([csm_orbit(t, csm_initial_phase) for t in csm_times])
 csm_x, csm_y, csm_z, csm_phases = csm_positions.T
+
+# Calculate PDI time in seconds from descent start
+pdi_seconds = (pdi_time - descent_start_time).total_seconds()
+total_descent_time = (landing_time - descent_start_time).total_seconds()
 
 # 2. Descent stage - from CSM orbit to surface
 # Initial state: [radius, longitude, latitude, velocity, flight_path_angle, heading, mass]
 descent_initial_state = [
     csm_radius,               # Initial radius (CSM orbit)
-    launch_longitude + 0.2,   # Initial longitude (farther from landing site to allow gradual approach)
+    launch_longitude + 3.2,   # Initial longitude (farther to the right for starting more on the x+ axis)
     launch_latitude,          # Initial latitude
     csm_velocity,             # Initial velocity (orbital velocity)
     -5 * deg,                 # Initial flight path angle (shallow descent)
     180 * deg,                # Initial heading (toward landing site)
     LM_Descent_m0             # Initial mass (descent + ascent stages)
 ]
+
+# Update simulation parameters to account for longer descent time
+t_max_descent = total_descent_time + 100  # Add margin to the total descent time
 
 print("Simulating descent trajectory...")
 descent_sol = solve_ivp(
@@ -308,7 +306,11 @@ descent_gamma = descent_sol.y[4]
 descent_psi = descent_sol.y[5]
 descent_m = descent_sol.y[6]
 
-print(f"Descent complete. Landing coordinates: {descent_phi[-1]/deg:.5f}°N, {descent_theta[-1]/deg:.5f}°E")
+# Calculate PDI index in the solution for analysis
+pdi_index = np.argmin(np.abs(descent_t - pdi_seconds))
+print(f"Descent complete. Total descent time: {descent_t[-1]/60:.1f} minutes")
+print(f"Pre-PDI time: {pdi_seconds/60:.1f} minutes, Post-PDI time: {(descent_t[-1] - pdi_seconds)/60:.1f} minutes")
+print(f"Landing coordinates: {descent_phi[-1]/deg:.5f}°N, {descent_theta[-1]/deg:.5f}°E")
 print(f"Distance from target: {Re * np.sqrt((descent_phi[-1] - launch_latitude)**2 + (descent_theta[-1] - launch_longitude)**2):.2f} m")
 print(f"Final descent velocity: {descent_v[-1]:.2f} m/s")
 print(f"Propellant remaining: {descent_m[-1] - (LM_Descent_mstruc + LM_Ascent_m0):.2f} kg")
@@ -350,7 +352,6 @@ print(f"Final velocity: {ascent_v[-1]:.2f} m/s (target: {v_target:.2f} m/s)")
 print(f"Propellant remaining: {ascent_m[-1] - (LM_Ascent_mstruc + LM_Ascent_mpl):.2f} kg")
 
 # Calculate actual mission timestamps
-descent_start_time = landing_time - datetime.timedelta(seconds=descent_t[-1])
 surface_start_time = landing_time
 ascent_start_time = takeoff_time
 ascent_end_time = takeoff_time + datetime.timedelta(seconds=ascent_t[-1])
@@ -405,9 +406,11 @@ ax.legend()
 # Plot altitude vs time for descent
 plt.subplot(2, 2, 2)
 plt.plot(descent_t, descent_r - Re)
+plt.axvline(x=pdi_seconds, color='r', linestyle='--', label='PDI')
 plt.title('Descent: Altitude vs Time')
 plt.xlabel('Time (s)')
 plt.ylabel('Altitude (m)')
+plt.legend()
 plt.grid(True)
 
 # Plot altitude vs time for ascent
