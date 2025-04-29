@@ -1,12 +1,16 @@
 @import "tailwindcss";
 
-html,
-body {
+body,
+html {
+  margin: 0;
+  padding: 0;
   overflow: hidden;
-  margin: 0px;
-  padding: 0px;
   height: 100%;
+  width: 100%;
+  font-family: "Helvetica Neue";
 }
-#cesiumContainer {
-  height: 100%;
+
+#root {
+  height: 100vh;
+  width: 100vw;
 }
