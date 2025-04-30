@@ -52,6 +52,12 @@ const MoonScene: React.FC = () => {
       });
       viewerRef.current = viewer;
       const scene = viewer.scene;
+
+      const startTime = Cesium.JulianDate.fromIso8601("1969-07-20T19:08:00Z");
+      viewer.clock.currentTime = startTime;
+      viewer.clock.startTime = startTime;
+      viewer.clock.clockRange = Cesium.ClockRange.LOOP_STOP;
+
       scene.skyBox = Cesium.SkyBox.createEarthSkyBox();
 
       // Add Moon Terrain 3D Tiles
@@ -106,9 +112,36 @@ const MoonScene: React.FC = () => {
       async function initialize() {
         const czmlFilePath = "/apollo11_mission.czml";
         try {
-          const czmlDataSource = new Cesium.CzmlDataSource();
+          // Set up clock settings before loading CZML
+          const startTime = Cesium.JulianDate.fromIso8601(
+            "1969-07-20T19:08:00Z"
+          );
+          const stopTime = Cesium.JulianDate.fromIso8601(
+            "1969-07-21T21:00:00Z"
+          );
+
+          // Create data source with custom clock settings
+          const czmlDataSource = new Cesium.CzmlDataSource({
+            // Override the default CZML clock settings
+            clock: new Cesium.DataSourceClock({
+              startTime: startTime,
+              currentTime: startTime,
+              stopTime: stopTime,
+              clockRange: Cesium.ClockRange.LOOP_STOP,
+              multiplier: 1,
+            }),
+          });
+
+          // Load CZML data
           await czmlDataSource.load(czmlFilePath);
-          viewer.dataSources.add(czmlDataSource);
+          await viewer.dataSources.add(czmlDataSource);
+
+          // Force viewer clock settings after CZML is loaded
+          viewer.clock.startTime = startTime;
+          viewer.clock.currentTime = startTime;
+          viewer.clock.clockRange = Cesium.ClockRange.LOOP_STOP;
+          viewer.clock.multiplier = 1;
+          viewer.clock.shouldAnimate = true;
 
           // Setup proper orientation for both stages
           const descentStage = czmlDataSource.entities.getById("LM_Descent");
@@ -119,8 +152,10 @@ const MoonScene: React.FC = () => {
               descentStage.position
             );
             descentStage.viewFrom = new Cesium.ConstantProperty(
-              new Cesium.Cartesian3(-100, 20, 50) // Closer view for descent stage
+              new Cesium.Cartesian3(0, 5000, 3000) // Further view for descent stage
             );
+
+            viewer.trackedEntity = descentStage;
           }
 
           if (ascentStage && ascentStage.position) {
@@ -130,31 +165,6 @@ const MoonScene: React.FC = () => {
             ascentStage.viewFrom = new Cesium.ConstantProperty(
               new Cesium.Cartesian3(-100, 20, 50)
             );
-          }
-
-          // Set initial time to LM undocking
-          viewer.clock.currentTime = Cesium.JulianDate.fromIso8601(
-            "1969-07-20T17:44:00Z"
-          );
-
-          // Set the initial view to focus on the separation between CSM and LM
-          const position = descentStage?.position?.getValue(
-            viewer.clock.currentTime
-          );
-          if (position) {
-            viewer.camera.flyTo({
-              destination: Cesium.Cartesian3.multiplyByScalar(
-                position,
-                2.5, // Position camera farther to see both CSM and LM
-                new Cesium.Cartesian3()
-              ),
-              orientation: {
-                heading: Cesium.Math.toRadians(0),
-                pitch: Cesium.Math.toRadians(-45),
-                roll: 0,
-              },
-              duration: 3, // Smooth transition duration
-            });
           } else {
             console.error(
               "Descent stage position is undefined at the current time."

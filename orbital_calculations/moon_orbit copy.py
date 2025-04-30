@@ -7,7 +7,7 @@ import datetime
 
 # Constants
 omega = 2.6617e-6         # rad/s, Moon rotation rate
-Re = 1738500             # m, lunar radius
+Re = 1737100              # m, lunar radius
 g0 = 1.62                 # m/s², surface gravity
 mu = g0 * Re**2           # m³/s², gravitational parameter
 deg = np.pi / 180         # degrees to radians
@@ -41,7 +41,7 @@ LM_Ascent_m0 = LM_Ascent_mstruc + LM_Ascent_mprop + LM_Ascent_mpl
 
 # Launch Site Coordinates (Apollo 11 landing site)
 launch_latitude = 0.67416 * deg  # radians, 0.674 deg N
-launch_longitude = (23.47315 + 1) * deg  # radians, 23.473 deg E - actual Apollo 11 landing site
+launch_longitude = 23.47315 * deg  # radians, 23.473 deg E - actual Apollo 11 landing site
 
 # Target Orbit Parameters
 target_altitude_km = 111  # km, target orbit altitude (historical)
@@ -298,7 +298,7 @@ descent_sol = solve_ivp(
 )
 
 descent_t = descent_sol.t
-descent_r = np.maximum(descent_sol.y[0], Re)
+descent_r = descent_sol.y[0]
 descent_theta = descent_sol.y[1]
 descent_phi = descent_sol.y[2]
 descent_v = descent_sol.y[3]
@@ -368,13 +368,10 @@ def sphere_to_cart(r, theta, phi):
 csm_cart = np.array([sphere_to_cart(csm_radius, csm_phases[i], 0) for i in range(len(csm_times))])
 csm_x, csm_y, csm_z = csm_cart.T
 
-
 # Descent trajectory
-descent_cart = np.array([
-    sphere_to_cart(max(descent_r[i], Re), descent_theta[i], descent_phi[i])
-    for i in range(len(descent_t))
-])
+descent_cart = np.array([sphere_to_cart(descent_r[i], descent_theta[i], descent_phi[i]) for i in range(len(descent_t))])
 descent_x, descent_y, descent_z = descent_cart.T
+
 # Ascent trajectory
 ascent_cart = np.array([sphere_to_cart(ascent_r[i], ascent_theta[i], ascent_phi[i]) for i in range(len(ascent_t))])
 ascent_x, ascent_y, ascent_z = ascent_cart.T
@@ -454,6 +451,26 @@ czml = [
             "step": "SYSTEM_CLOCK_MULTIPLIER"
         }
     },
+    # Add the Moon
+    {
+        "id": "Moon",
+        "name": "Moon",
+        "position": {
+            "cartesian": [0, 0, 0]
+        },
+        "ellipsoid": {
+            "radii": {
+                "cartesian": [Re, Re, Re]
+            },
+            "material": {
+                "solidColor": {
+                    "color": {
+                        "rgba": [200, 200, 200, 255]
+                    }
+                }
+            }
+        }
+    }
 ]
 
 # Add CSM trajectory
@@ -563,7 +580,7 @@ czml.append({
         "cartesian": [landing_site_x, landing_site_y, landing_site_z]
     },
     "model": {
-        "gltf": "/models/lm/lunarmodule.gltf",
+        "gltf": "/models/lm/lunar_lander.gltf",
         "minimumPixelSize": 64,
         "maximumScale": 20000
     },
@@ -614,7 +631,7 @@ czml.append({
         "cartesian": ascent_positions
     },
     "model": {
-        "gltf": "/models/lm/lunarmodule.gltf",
+        "gltf": "/models/lm/lm_ascent.gltf",
         "minimumPixelSize": 64,
         "maximumScale": 20000
     },

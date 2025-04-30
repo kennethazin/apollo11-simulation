@@ -4080,17 +4080,7 @@
     },
     "label": {
       "text": "Columbia CSM",
-      "font": "11pt Lucida Console",
-      "style": "FILL_AND_OUTLINE",
-      "outlineWidth": 2,
-      "outlineColor": {
-        "rgba": [
-          0,
-          0,
-          0,
-          255
-        ]
-      },
+      "font": "11pt Helvetica",
       "horizontalOrigin": "LEFT",
       "verticalOrigin": "TOP",
       "pixelOffset": {

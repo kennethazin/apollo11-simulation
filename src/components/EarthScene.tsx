@@ -376,7 +376,7 @@ const Earth: React.FC<EarthProps> = ({ onEarthSceneEnd }) => {
             );
 
             satellite.viewFrom = new Cesium.ConstantProperty(
-              new Cesium.Cartesian3(-300, 20, 100)
+              new Cesium.Cartesian3(300, 20, 100)
             );
 
             // Set a similar viewFrom for Post-TLI
